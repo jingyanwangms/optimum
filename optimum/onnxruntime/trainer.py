@@ -23,6 +23,7 @@ import time
 import types
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+import nvtx
 
 
 # Integrations must be imported before ML frameworks:
@@ -399,7 +400,8 @@ class ORTTrainer(Trainer):
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
-        from torch_ort import ORTModule
+        # from torch_ort import ORTModule
+        from onnxruntime.training.ortmodule import ORTModule
 
         self.accelerator.free_memory()
         self._train_batch_size = batch_size
@@ -459,7 +461,10 @@ class ORTTrainer(Trainer):
 
         # Wrap the model with `ORTModule`
         logger.info("Wrap ORTModule for ONNX Runtime training.")
-        model = ORTModule(self.model)
+        # model = ORTModule(self.model)
+        from onnxruntime.training.ortmodule import ORTModule, DebugOptions, LogLevel
+        debug_options = DebugOptions(save_onnx=True, log_level=LogLevel.INFO, onnx_prefix="gemma") if os.getenv("ORTMODULE_GRAPH", "").lower() == "true" else None
+        model = ORTModule(self.model, debug_options)
         self.model_wrapped = model
         self.model = model
 
@@ -687,6 +692,45 @@ class ORTTrainer(Trainer):
 
             step = -1
             for step, inputs in enumerate(epoch_iterator):
+                # print("#*#*#* inputs", inputs)
+                # required_export_kwargs= {
+                #     'input_names': ['input_ids', 'attention_mask', 'labels'], 
+                #     'output_names': ['output-0', 'output-1', 'output-2', 'output-3'], 
+                #     'opset_version': 15,
+                #     'do_constant_folding': False, 
+                #     'training': torch.onnx.TrainingMode.TRAINING, 
+                #     'dynamic_axes': {'input_ids': {0: 'input_ids_dim0', 1: 'input_ids_dim1'}, 
+                #                      'attention_mask': {0:
+                #         'attention_mask_dim0', 1: 'attention_mask_dim1'}, 
+                #         'labels': {0: 'labels_dim0', 1: 'labels_dim1'}, 
+                #         'output-0': {0: 'output-0_dim0', 1: 'output-0_dim1', 2: 'output-0_dim2'},
+                #         'output-1': {}, 
+                #         'output-2': {0: 'output-2_dim0', 1: 'output-2_dim1', 2: 'output-2_dim2', 3: 'output-2_dim3'}, 
+                #         'output-3': {0: 'output-3_dim0', 1: 'output-3_dim1', 2: 'output-3_dim2', 3: 'output-3_dim3'}}, 
+                #     'verbose': True, 
+                #     'export_params': False, 
+                #     'keep_initializers_as_inputs': True, 
+                #     'autograd_inlining': False}
+                # torch.onnx.export(model, inputs, "gemma.onnx", **required_export_kwargs)
+
+                # onnx_program = torch.onnx.dynamo_export(model, inputs)
+                # onnx_program.save("gemma.onnx")
+
+                # import onnxruntime
+                # # sess = onnxruntime.InferenceSession("gemma_torch_exported_inference.onnx")
+                # sess_options = onnxruntime.SessionOptions()
+                # sess_options.optimized_model_filepath = "gemma_optimized.onnx"
+                # sess_options.log_severity_level = 0
+                # sess = onnxruntime.InferenceSession("gemma_torch_exported_inference.onnx", session_options=sess_options,  providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                # outputs = sess.run(["output"], inputs)
+                # print(outputs)
+                # return
+            
+                # print("#*#*#", inputs)
+                if step == 0:
+                    torch.cuda.cudart().cudaProfilerStart()
+                if step == 5:
+                    torch.cuda.cudart().cudaProfilerStop()
                 total_batched_samples += 1
                 if rng_to_sync:
                     self._load_rng_state(resume_from_checkpoint)
@@ -766,19 +810,20 @@ class ORTTrainer(Trainer):
                             grad_norm = _grad_norm.item() if _grad_norm is not None else None
 
                     # Optimizer step
-                    self.optimizer.step()
-                    optimizer_was_run = not self.accelerator.optimizer_step_was_skipped
+                    with nvtx.annotate("optimizer", color="blue"):
+                        self.optimizer.step()
+                        optimizer_was_run = not self.accelerator.optimizer_step_was_skipped
 
-                    if optimizer_was_run:
-                        # Delay optimizer scheduling until metrics are generated
-                        if not isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                            self.lr_scheduler.step()
+                        if optimizer_was_run:
+                            # Delay optimizer scheduling until metrics are generated
+                            if not isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                                self.lr_scheduler.step()
 
-                    model.zero_grad()
-                    grad_norm: Optional[float] = None
-                    self.state.global_step += 1
-                    self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
-                    self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                        model.zero_grad()
+                        grad_norm: Optional[float] = None
+                        self.state.global_step += 1
+                        self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
+                        self.control = self.callback_handler.on_step_end(args, self.state, self.control)
 
                     self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
                 else:
@@ -863,7 +908,8 @@ class ORTTrainer(Trainer):
 
         # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
         if unwrap_model(model) is not model:
-            from torch_ort import ORTModule
+            # from torch_ort import ORTModule
+            from onnxruntime.training.ortmodule import ORTModule
 
             if not isinstance(model, ORTModule):
                 return model

@@ -1,0 +1,39 @@
+diff --git a/optimum/onnxruntime/trainer.py b/optimum/onnxruntime/trainer.py
+index 2b7fb65..1e2a35d 100644
+--- a/optimum/onnxruntime/trainer.py
++++ b/optimum/onnxruntime/trainer.py
+@@ -459,7 +459,10 @@ class ORTTrainer(Trainer):
+ 
+         # Wrap the model with `ORTModule`
+         logger.info("Wrap ORTModule for ONNX Runtime training.")
+-        model = ORTModule(self.model)
++        from onnxruntime.training.ortmodule import ORTModule, DebugOptions, LogLevel
++        debug_options = DebugOptions(save_onnx=True, log_level=LogLevel.VERBOSE, onnx_prefix="gemma") if os.getenv("ORTMODULE_GRAPH", "").lower() == "true" else None
++        model = ORTModule(self.model, debug_options)
++        # model = ORTModule(self.model, DebugOptions(save_onnx=True, log_level=LogLevel.VERBOSE, onnx_prefix="gemma"))
+         self.model_wrapped = model
+         self.model = model
+ 
+@@ -687,6 +690,10 @@ class ORTTrainer(Trainer):
+ 
+             step = -1
+             for step, inputs in enumerate(epoch_iterator):
++                if step == 20:
++                    torch.cuda.cudart().cudaProfilerStart()
++                if step == 30:
++                    torch.cuda.cudart().cudaProfilerStop()
+                 total_batched_samples += 1
+                 if rng_to_sync:
+                     self._load_rng_state(resume_from_checkpoint)
+diff --git a/optimum/onnxruntime/training_args.py b/optimum/onnxruntime/training_args.py
+index a0cb7c8..7c31718 100644
+--- a/optimum/onnxruntime/training_args.py
++++ b/optimum/onnxruntime/training_args.py
+@@ -397,6 +397,7 @@ class ORTTrainingArguments(TrainingArguments):
+         ):
+             raise ValueError("`min_num_params` and `transformer_layer_cls_to_wrap` are mutually exclusive.")
+         self.fsdp_config["xla"] = self.fsdp_config.get("xla", False)
++        self.fsdp_config["xla_fsdp_v2"] = self.fsdp_config.get("xla_fsdp_v2", False)
+         self.fsdp_config["xla_fsdp_grad_ckpt"] = self.fsdp_config.get("xla_fsdp_grad_ckpt", False)
+         if self.fsdp_config["xla"]:
+             if len(self.fsdp) > 0:
