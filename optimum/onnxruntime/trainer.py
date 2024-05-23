@@ -668,6 +668,7 @@ class ORTTrainer(Trainer):
                     _ = list(sampler)
 
         total_batched_samples = 0
+        torch.cuda.cudart().cudaProfilerStart()
         for epoch in range(epochs_trained, num_train_epochs):
             with nvtx.annotate(f"epoch {epoch}", color="green"):
                 epoch_iterator = train_dataloader
@@ -697,6 +698,9 @@ class ORTTrainer(Trainer):
                 step = -1
                 for step, inputs in enumerate(epoch_iterator):
                     with nvtx.annotate(f"step {step}", color="orange"):
+                        # Only profile first 10 steps in each epoch
+                        # if step == 10:
+                        #     break
                         total_batched_samples += 1
                         if rng_to_sync:
                             self._load_rng_state(resume_from_checkpoint)
@@ -804,7 +808,6 @@ class ORTTrainer(Trainer):
                         f" num_steps ({max_steps}) higher than the number of available samples."
                     )
                     self.control.should_training_stop = True
-
                 self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
                 self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
 
@@ -815,6 +818,9 @@ class ORTTrainer(Trainer):
                     )
                 if self.control.should_training_stop:
                     break
+                torch.cuda.synchronize()
+        
+        torch.cuda.cudart().cudaProfilerStop()
 
         if args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training
