@@ -460,11 +460,13 @@ class ORTTrainer(Trainer):
 
         # Wrap the model with `ORTModule`
         logger.info("Wrap ORTModule for ONNX Runtime training.")
+        # print("#*#*#", self.args)
         if self.args.save_onnx:
-            from torch_ort import DebugOptions
+            from torch_ort import DebugOptions, LogLevel
+            # from onnxruntime.training.ortmodule import ORTModule, DebugOptions, LogLevel
 
             model = ORTModule(
-                self.model, DebugOptions(save_onnx=self.args.save_onnx, onnx_prefix=self.args.onnx_prefix)
+                self.model, DebugOptions(save_onnx=self.args.save_onnx, log_level=LogLevel.VERBOSE, onnx_prefix=self.args.onnx_prefix)
             )
         else:
             model = ORTModule(self.model)
@@ -701,6 +703,7 @@ class ORTTrainer(Trainer):
                         # Only profile first 10 steps
                         if step == 10:
                             torch.cuda.cudart().cudaProfilerStop()
+                            # break
                         total_batched_samples += 1
                         if rng_to_sync:
                             self._load_rng_state(resume_from_checkpoint)
