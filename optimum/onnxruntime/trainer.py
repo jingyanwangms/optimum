@@ -702,7 +702,7 @@ class ORTTrainer(Trainer):
                     with nvtx.annotate(f"step {step}", color="orange"):
                         # Only profile first 10 steps
                         if step == 10:
-                            torch.cuda.cudart().cudaProfilerStop()
+                            # torch.cuda.cudart().cudaProfilerStop()
                             # break
                         total_batched_samples += 1
                         if rng_to_sync:
@@ -804,6 +804,21 @@ class ORTTrainer(Trainer):
 
                         if self.control.should_epoch_stop or self.control.should_training_stop:
                             break
+                        
+                        if step % 10 == 0:
+                            torch.cuda.synchronize()
+                        if step == 0:
+                            start_time = time.time()
+                            torch.cuda.cudart().cudaProfilerStart()
+                        if step == 10:
+                            end_time = time.time()
+                            torch.cuda.cudart().cudaProfilerStop()
+                            # Calculate elapsed time
+                            elapsed_time = end_time - start_time
+                            avg_per_step = elapsed_time / 10
+                            avg_thrput = 10 / elapsed_time
+                            print(f"Time spent on 10 steps: {elapsed_time:.6f} seconds, avg time per step: {avg_per_step:.2f}, avg throughput: {avg_thrput:.2f} it/s")
+                            
                 if step < 0:
                     logger.warning(
                         f"There seems to be not a single sample in your train dataloader, stopping training at step"
