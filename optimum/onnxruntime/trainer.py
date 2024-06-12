@@ -670,7 +670,7 @@ class ORTTrainer(Trainer):
                     _ = list(sampler)
 
         total_batched_samples = 0
-        torch.cuda.cudart().cudaProfilerStart()
+        # torch.cuda.cudart().cudaProfilerStart()
         for epoch in range(epochs_trained, num_train_epochs):
             with nvtx.annotate(f"epoch {epoch}", color="green"):
                 epoch_iterator = train_dataloader
@@ -701,7 +701,7 @@ class ORTTrainer(Trainer):
                 for step, inputs in enumerate(epoch_iterator):
                     with nvtx.annotate(f"step {step}", color="orange"):
                         # Only profile first 10 steps
-                        if step == 10:
+                        # if step == 10:
                             # torch.cuda.cudart().cudaProfilerStop()
                             # break
                         total_batched_samples += 1
@@ -810,8 +810,10 @@ class ORTTrainer(Trainer):
                         if step == 0:
                             start_time = time.time()
                             torch.cuda.cudart().cudaProfilerStart()
+                            nvtx.range_push("10 steps")
                         if step == 10:
                             end_time = time.time()
+                            nvtx.range_pop()
                             torch.cuda.cudart().cudaProfilerStop()
                             # Calculate elapsed time
                             elapsed_time = end_time - start_time
