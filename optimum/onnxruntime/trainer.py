@@ -805,20 +805,26 @@ class ORTTrainer(Trainer):
                         if self.control.should_epoch_stop or self.control.should_training_stop:
                             break
                         
-                        if step % 10 == 0:
-                            torch.cuda.synchronize()
+                        # if step % 10 == 0:
+                        #     torch.cuda.synchronize()
                         if step == 0:
-                            start_time = time.time()
+                            # start_time = time.time()
                             torch.cuda.cudart().cudaProfilerStart()
                         if step == 10:
-                            end_time = time.time()
+                            # end_time = time.time()
                             torch.cuda.cudart().cudaProfilerStop()
                             # Calculate elapsed time
-                            elapsed_time = end_time - start_time
-                            avg_per_step = elapsed_time / 10
-                            avg_thrput = 10 / elapsed_time
-                            print(f"Time spent on 10 steps: {elapsed_time:.6f} seconds, avg time per step: {avg_per_step:.2f}, avg throughput: {avg_thrput:.2f} it/s")
-                            
+                            # elapsed_time = end_time - start_time
+                            # avg_per_step = elapsed_time / 10
+                            # avg_thrput = 10 / elapsed_time
+                            # print(f"Time spent on 10 steps: {elapsed_time:.6f} seconds, avg time per step: {avg_per_step:.2f}, avg throughput: {avg_thrput:.2f} it/s")
+                # cuda sync at end of training
+                start_time = time.time()
+                torch.cuda.synchronize()
+                end_time = time.time()
+                cudasync_time = end_time - start_time
+                print(f"cuda sync time {cudasync_time:.6f}s")
+
                 if step < 0:
                     logger.warning(
                         f"There seems to be not a single sample in your train dataloader, stopping training at step"
